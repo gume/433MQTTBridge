@@ -1,0 +1,84 @@
+#include "OOKtranslate.h"
+
+OOKtranslate::OOKtranslate(uint32_t _minST, uint32_t _maxST, uint32_t _tickST) {
+  minST = _minST;
+  maxST = _maxST;
+  tickST = _tickST;
+  
+  signalStr = "";
+  signalLen = 0;
+  lastSignal = 'X';
+  lastSignalTime = 0;
+  currentSignalTime = 0;
+  
+  userCodeCallback = NULL;
+  userUnknownCallback = NULL;
+  transLen = 0;
+}
+
+void OOKtranslate::signal(uint32_t t, bool value) {
+  currentSignalTime = t;
+  if (currentSignalTime == 0) currentSignalTime = 1;  // Avoid special time signals
+  if (value) currentSignal = '1';
+  else currentSignal = '0';
+}
+
+void OOKtranslate::loop(uint32_t t) {
+  if ((currentSignalTime > 0) && (t - currentSignalTime > minST)) {
+    //Serial.print(".");
+    if (lastSignal != currentSignal) {
+      //Serial.print("!");
+      if (currentSignalTime - lastSignalTime < maxST) {
+        signalStr += currentSignal;
+        signalStr += "["+String((currentSignalTime-lastSignalTime)/tickST)+"]";
+      }
+      //Serial.print(currentSignal);
+      //Serial.print("["+String(currentSignalTime-lastSignalTime)+"]");
+      signalLen += 1;
+      lastSignalTime = currentSignalTime;
+      lastSignal = currentSignal;
+    }
+    currentSignalTime = 0;
+  }
+
+  if ((lastSignalTime > 0) && (t - lastSignalTime > maxST)) {
+    
+    if (signalLen > 1) {
+      String code = checkCode(signalStr);
+	    if (code != "") {
+		    if (userCodeCallback) userCodeCallback(code);
+	    }
+	    else {
+		    if (userUnknownCallback) userUnknownCallback(signalStr);
+	    }
+    }
+        
+    signalStr = "";
+    signalLen = 0;
+    lastSignal = 'X';
+    lastSignalTime = 0;
+  }
+}
+
+String OOKtranslate::checkCode(String signalString) {
+  for (int i = 0; i < transLen; i++) {
+    if (signals[i] == signalString) return codes[i];
+  }
+  return "";
+}
+
+void OOKtranslate::setCode(String signalString, String code) {
+  if (transLen < MAXTRANS-1) {
+    codes[transLen] = code;
+    signals[transLen] = signalString;
+    transLen++;
+  }
+}
+
+void OOKtranslate::setCodeCallback(void (*_userCodeCallback)(String code)) {
+  userCodeCallback = _userCodeCallback;
+}
+
+void OOKtranslate::setUnknownCallback(void (*_userUnknownCallback)(String signalStr)) {
+  userUnknownCallback = _userUnknownCallback;
+}

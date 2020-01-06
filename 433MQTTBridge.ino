@@ -15,6 +15,7 @@
 void wifiConnected();
 void mqttMessageReceived(String &topic, String &payload);
 void remotePressed(String code);
+void garbageReceived(String signal);
 
 const char thingName[] = "433MQTTBridge";
 const char wifiInitialApPassword[] = "password";
@@ -36,7 +37,7 @@ IotWebConfParameter mqttUserPasswordParam = IotWebConfParameter("MQTT password",
 IotWebConfParameter hassDiscoveryParam = IotWebConfParameter("HASS discovery topic", "hassDiscovery", hassDiscoveryValue, STRING_LEN, "homeassistant");
 
 RFM69OOK radio(D4, D8, true, digitalPinToInterrupt(D8));
-OOKtranslate ot;
+OOKtranslate ot(100,10000);
 bool rstate = false;  // For polling
 
 volatile byte interrupt;
@@ -54,7 +55,7 @@ void handleRoot() {
   server.send(200, "text/html", s);
 }
 
-MQTTClient mqttClient(512);
+MQTTClient mqttClient(2048);
 WiFiClient net;
 boolean needMqttConnect = false;
 uint32_t lastMqttConnectionAttempt = 0;
@@ -86,8 +87,9 @@ void setup() {
   mqttClient.onMessage(mqttMessageReceived);
 
   radio.initialize();
-  radio.setFixedThreshold(30);
-  radio.setFrequencyMHz(433.714);
+  radio.setFixedThreshold(32); // 30
+  //radio.setFrequencyMHz(433.714);
+  radio.setFrequencyMHz(433.92);
   // Interrupt is not working with WiFi :(
   //radio.receiveBegin();
   //radio.attachUserInterrupt(myInterrupt);
@@ -97,7 +99,11 @@ void setup() {
   radio.writeReg(REG_OPMODE, (radio.readReg(REG_OPMODE) & 0xE3) | RF_OPMODE_RECEIVER);
   radio.writeReg(REG_TESTPA1, 0x55);
   radio.writeReg(REG_TESTPA2, 0x70);
+  // Set fixed LNA gain to highest
+  radio.writeReg(REG_LNA, 0x09);
 
+  // Remote 1
+  /*
   ot.setCode("1[31]0[8]1[5]0[8]1[5]0[8]1[5]0[8]1[18]0[8]", "A+");
   ot.setCode("1[31]0[8]1[5]0[8]1[5]0[8]1[5]0[8]1[5]0[8]", "A-");
   ot.setCode("1[18]0[8]1[18]0[8]1[5]0[8]1[5]0[8]1[18]0[8]", "B+");
@@ -107,9 +113,16 @@ void setup() {
   ot.setCode("1[18]0[8]1[5]0[8]1[5]0[8]1[18]0[8]1[18]0[8]", "D+");
   ot.setCode("1[18]0[8]1[5]0[8]1[5]0[8]1[18]0[8]1[5]0[8]", "D-");
   //ot.setCode("1[18]0[8]1[5]0[8]1[5]0[8]1[5]0[8]1[5]0[34]", "NULL");
+  */
+
+  ot.setCode("0010101000001001001010000", "1");
+  ot.setCode("0010101000001001001011000", "2");
+  ot.setCode("0010101000001001001001000", "3");
+  ot.setCode("0010101000001001001010010", "4");
 
   ot.setCodeCallback(remotePressed);
-  //ot.setUnknownCallback(remotePressed);
+  ot.setUnknownCallback(garbageReceived);
+  //ot.setRawCallback(sendRaw);
 
   Serial.println(F("start"));
 }
@@ -192,26 +205,37 @@ void mqttMessageReceived(String &topic, String &payload)
   Serial.println("Incoming: " + topic + " - " + payload);
 
   if (topic == String(hassDiscoveryValue)+"/status") {
-    Serial.println("MQTT disconnect.");
-    mqttClient.disconnect();
-    // It will reconnect
-    return;
+    if (payload == "online") {
+      Serial.println("MQTT disconnect.");
+      mqttClient.disconnect();
+      // It will reconnect
+      return;
+    }
   }
 
   StaticJsonDocument<200> msg;
   DeserializationError error = deserializeJson(msg, payload);
   if (error) return;
-
-  /*
-  if (msg.containsKey("level")) {
-    int target = msg["level"];
-    bike.setLevel(target);
-    mqttClient.publish("/smartgymbike/debug", "level set to " + String(target));
-  }
-  */
 }
 
 void remotePressed(String code) {
-  Serial.println(code);
+  Serial.println("CODE: " + code);
   mqttClient.publish("433mqttbridge/state", "{\"code\": \""+code+"\"}");
+
+  radio.writeReg(REG_PACKETCONFIG2, 0x04);  // Force WAIT mode
+}
+
+void garbageReceived(String signal) {
+  //byte lna = radio.readReg(REG_LNA);
+  //Serial.println("LNA: " + String(lna));
+  radio.writeReg(REG_PACKETCONFIG2, 0x04);  // Force WAIT mode
+
+  Serial.println(signal);
+  mqttClient.publish("433mqttbridge/garbage", "{\"code\": \""+signal+"\"}");
+}
+
+void sendRaw(String raw1, String raw2) {
+  Serial.println(raw1);
+  Serial.println(raw2);
+  mqttClient.publish("433mqttbridge/raw", "{ \"raw1\": \"" + raw1 + "\", \"raw2\": \""+raw2+"\"}");
 }

@@ -2,10 +2,11 @@
 
 #include <Arduino.h>
 #define MAXTRANS 16
+#define MAXREC 500
 
 class OOKtranslate {
 public:
-  OOKtranslate(uint32_t _minST = 500, uint32_t _maxST = 10000, uint32_t _tickST = 200);
+  OOKtranslate(uint32_t _minST = 100, uint32_t _maxST = 10000);
 
   void signal(uint32_t micros, bool value);
   void loop(uint32_t micros);
@@ -13,20 +14,18 @@ public:
   void setCode(String signalString, String code);
   void setCodeCallback(void (*_userCodeCallback)(String code));
   void setUnknownCallback(void (*_userUnknownCallback)(String signalStr));
+  void setRawCallback(void (*_userRawCallback)(String raw1, String raw2));
   
 private:
+  void checkSignal();
   String checkCode(String signalString);
 
   uint32_t minST;	// Minimal signal hold time
   uint32_t maxST;	// Maximal signal hold time
-  uint32_t tickST;	// Signal hold time
   
-  String signalStr;
-  uint32_t signalLen;
-  char lastSignal;
-  uint32_t lastSignalTime;
-  char currentSignal;
-  uint32_t currentSignalTime;
+  uint32_t signald[MAXREC];   // Duration of signals
+  uint8_t signalv[MAXREC];    // Signal value
+  uint8_t signall;            // Length of the signal
 
   //etl::map<String, String> codes;
   String codes[MAXTRANS];
@@ -35,4 +34,7 @@ private:
   
   void (*userCodeCallback)(String code);
   void (*userUnknownCallback)(String signalStr);
+  void (*userRawCallback) (String raw1, String raw2);
+
+  uint16_t bucketTimes[6] = { 320, 640, 800, 160, 6000 };
 };

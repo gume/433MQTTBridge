@@ -14,6 +14,8 @@ OOKtranslate::OOKtranslate(uint32_t _minST, uint32_t _maxST) {
 
 void OOKtranslate::signal(uint32_t t, bool value) {
 
+  if (working) oops = true;
+
   if (signall == 0 && value == 0) {
     // Should not start with zero!
     return;
@@ -37,6 +39,9 @@ void OOKtranslate::signal(uint32_t t, bool value) {
 
 void OOKtranslate::checkSignal() {
 
+  working = true;
+  oops = false;
+  
   String raw1 = "";
   String raw2 = "";
   uint32_t len1 = 0;
@@ -118,6 +123,8 @@ void OOKtranslate::checkSignal() {
   }
 
   signall = 0;
+  working = false;
+  if (oops) Serial.println("OOPS!");
 }
 
 void OOKtranslate::loop(uint32_t t) {

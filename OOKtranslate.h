@@ -25,7 +25,10 @@ private:
   
   uint32_t signald[MAXREC];   // Duration of signals
   uint8_t signalv[MAXREC];    // Signal value
-  uint8_t signall;            // Length of the signal
+  uint16_t signall;            // Length of the signal
+
+  volatile bool working;
+  bool oops;
 
   //etl::map<String, String> codes;
   String codes[MAXTRANS];

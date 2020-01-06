@@ -99,8 +99,9 @@ void setup() {
   radio.writeReg(REG_OPMODE, (radio.readReg(REG_OPMODE) & 0xE3) | RF_OPMODE_RECEIVER);
   radio.writeReg(REG_TESTPA1, 0x55);
   radio.writeReg(REG_TESTPA2, 0x70);
-  // Set fixed LNA gain to highest
-  radio.writeReg(REG_LNA, 0x09);
+  
+  // Set fixed LNA gain to highest (This might not be necessary)
+  //radio.writeReg(REG_LNA, 0x09);
 
   // Remote 1
   /*

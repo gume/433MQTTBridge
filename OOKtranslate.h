@@ -14,8 +14,12 @@ public:
   void setCode(String signalString, String code);
   void setCodeCallback(void (*_userCodeCallback)(String code));
   void setUnknownCallback(void (*_userUnknownCallback)(String signalStr));
-  void setRawCallback(void (*_userRawCallback)(String raw1, String raw2));
-  
+  void setRawCallback(void (*_userRawCallback)(uint8_t [], uint32_t [], int));
+
+  String signalToString(uint8_t [], uint32_t [], int);
+  int removeNoise(int, uint8_t [], uint32_t [], int);
+  String checkBuckets(uint16_t [], uint8_t [], uint32_t [], int);
+
 private:
   void checkSignal();
   String checkCode(String signalString);
@@ -27,9 +31,6 @@ private:
   uint8_t signalv[MAXREC];    // Signal value
   uint16_t signall;            // Length of the signal
 
-  volatile bool working;
-  bool oops;
-
   //etl::map<String, String> codes;
   String codes[MAXTRANS];
   String signals[MAXTRANS];
@@ -37,7 +38,7 @@ private:
   
   void (*userCodeCallback)(String code);
   void (*userUnknownCallback)(String signalStr);
-  void (*userRawCallback) (String raw1, String raw2);
+  void (*userRawCallback) (uint8_t [], uint32_t [], int);
 
-  uint16_t bucketTimes[6] = { 320, 640, 800, 160, 6000 };
+  uint16_t bucketTimes[5] = { 320, 640, 800, 160, 6000 };
 };

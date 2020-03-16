@@ -11,6 +11,7 @@
 #include <IotWebConf.h>
 #include <MQTT.h>
 #include <ArduinoJson.h>
+#include "ArduinoSort.h"
 
 void wifiConnected();
 void mqttMessageReceived(String &topic, String &payload);
@@ -37,7 +38,7 @@ IotWebConfParameter mqttUserPasswordParam = IotWebConfParameter("MQTT password",
 IotWebConfParameter hassDiscoveryParam = IotWebConfParameter("HASS discovery topic", "hassDiscovery", hassDiscoveryValue, STRING_LEN, "homeassistant");
 
 RFM69OOK radio(D4, D8, true, digitalPinToInterrupt(D8));
-OOKtranslate ot(100,10000);
+OOKtranslate ot(100,10000); // This works with Xiaomi remote
 bool rstate = false;  // For polling
 
 volatile byte interrupt;
@@ -63,7 +64,7 @@ uint32_t lastMqttConnectionAttempt = 0;
 
 
 void setup() {
-  Serial.begin(74880);
+  Serial.begin(500000);  // or 74880
 
   iotWebConf.setStatusPin(STATUS_PIN);
   iotWebConf.setConfigPin(CONFIG_PIN);  
@@ -123,7 +124,7 @@ void setup() {
 
   ot.setCodeCallback(remotePressed);
   ot.setUnknownCallback(garbageReceived);
-  //ot.setRawCallback(sendRaw);
+  ot.setRawCallback(rawsignal);
 
   Serial.println(F("start"));
 }
@@ -136,7 +137,7 @@ void loop() {
   }  
 
   iotWebConf.doLoop();
-  mqttClient.loop();
+  //mqttClient.loop();
   ot.loop(micros());
 
   // Do polling instead of interrupts
@@ -145,6 +146,7 @@ void loop() {
     interrupt = 1;
   }
 
+/*
   if (needMqttConnect) {
     if (connectMqtt()) {
       needMqttConnect = false;
@@ -153,6 +155,7 @@ void loop() {
     Serial.println("MQTT reconnect");
     needMqttConnect = true;
   }
+  */
 }
 
 void wifiConnected()
@@ -231,12 +234,21 @@ void garbageReceived(String signal) {
   //Serial.println("LNA: " + String(lna));
   radio.writeReg(REG_PACKETCONFIG2, 0x04);  // Force WAIT mode
 
+  Serial.println("Garbage");
   Serial.println(signal);
   mqttClient.publish("433mqttbridge/garbage", "{\"code\": \""+signal+"\"}");
 }
 
-void sendRaw(String raw1, String raw2) {
-  Serial.println(raw1);
-  Serial.println(raw2);
-  mqttClient.publish("433mqttbridge/raw", "{ \"raw1\": \"" + raw1 + "\", \"raw2\": \""+raw2+"\"}");
+void rawsignal(uint8_t sv[], uint32_t sd[], int sl) {
+  String raw = ot.signalToString(sv, sd, sl);
+  Serial.println(String(sl) + ": " + raw);
+
+  // Bell: 0001010000011111111111110, 150-650/600-250/3000
+  // Temperature: ???, 300-400/550-150/900 + Preamble!!! (800-650)
+  
+  uint16_t b[] = { 150,650,600,250,3000 };
+  String t = ot.checkBuckets(b, sv, sd, sl);
+  Serial.println(t);
+  
+  //mqttClient.publish("433mqttbridge/raw", "{ \"raw1\": \"" + raw1 + "\", \"raw2\": \""+raw2+"\"}");
 }

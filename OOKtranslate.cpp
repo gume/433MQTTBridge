@@ -9,12 +9,13 @@ OOKtranslate::OOKtranslate(uint32_t _minST, uint32_t _maxST) {
   
   userCodeCallback = NULL;
   userUnknownCallback = NULL;
+  userRawCallback = NULL;
+  
   transLen = 0;
 }
 
+// Incoming signal, time in us
 void OOKtranslate::signal(uint32_t t, bool value) {
-
-  if (working) oops = true;
 
   if (signall == 0 && value == 0) {
     // Should not start with zero!
@@ -23,7 +24,7 @@ void OOKtranslate::signal(uint32_t t, bool value) {
   
   if (signall > 0) {
     if (signalv[signall-1] == value) {
-      // Strange, but the same signal (missed something)
+      // Strange, but is is the same signal as previously. (might have missed something)
       return;  
     }
     signald[signall-1] = t - signald[signall-1];
@@ -33,84 +34,26 @@ void OOKtranslate::signal(uint32_t t, bool value) {
   signalv[signall] = value;
   signall++;
   if (signall == MAXREC) {
+    signall--;  // The last signal has no duration, so skip it
+    // Try to tanslate the signal
     checkSignal();
   }
 }
 
 void OOKtranslate::checkSignal() {
 
-  working = true;
-  oops = false;
+  //if (userRawCallback) {
+  //  userRawCallback(signalv, signald, signall);
+  //}
   
-  String raw1 = "";
-  String raw2 = "";
-  uint32_t len1 = 0;
-  uint32_t len2 = 0;
+  signall = removeNoise(minST, signalv, signald, signall);    // Overwrite the arrays!
   
   if (userRawCallback) {
-    for (int i = 0; i < signall; i++) {
-      raw1 += String((char)(signalv[i] + '0'));
-      raw1 += "[" + String(signald[i]) + "]";
-      len1 += signald[i];
-    }    
+    userRawCallback(signalv, signald, signall);
   }
+
+  String signalStr = checkBuckets(bucketTimes, signalv, signald, signall);
   
-  // Remove short signals
-  int i = 0;
-  int j = 0;
-  while (i < signall) {
-    if ((j > 0) && (signald[i] < minST)) {
-      signald[j-1] += signald[i];
-      i++;
-    }
-    else if ((j > 0) && (signalv[i] == signalv[j-1])) {
-      signald[j-1] += signald[i];
-      i++;      
-    }
-    else {
-      signald[j] = signald[i];
-      signalv[j] = signalv[i];
-      i++; j++;
-    }
-  }
-  signall = j;
-
-  if (userRawCallback) {
-    for (int i = 0; i < signall; i++) {
-      raw2 += String((char)(signalv[i] + '0'));
-      raw2 += "[" + String(signald[i]) + "]";
-      len2 += signald[i];
-    }    
-
-    raw1 += "S[" + String(len1) + "]";
-    raw2 += "S[" + String(len2) + "]";
-    userRawCallback(raw1, raw2);
-  }
-
-  String signalStr = "/";
-  for (int i = 0; i < signall; i += 2) {
-    uint32_t hi = signald[i];
-    uint32_t lo = signald[i+1];
-    if (lo > bucketTimes[4]) {
-      // Last signal in the row
-      if (abs(hi - bucketTimes[0]) < abs(hi-bucketTimes[2])) signalStr += "0/";
-      else signalStr += "1/";
-    }
-    else if (  (hi + lo)*10 > (bucketTimes[0] + bucketTimes[1])*12 &&
-          (hi + lo)*10 > (bucketTimes[2] + bucketTimes[3])*12) {
-      // Missing signals
-      signalStr += "?";
-      signald[i] = signald[i] - (bucketTimes[0] + bucketTimes[1] + bucketTimes[2] + bucketTimes[3])/2;
-      i = i - 2;
-    }
-    else {
-      uint32_t d1 = abs(hi-bucketTimes[0]) + abs(lo-bucketTimes[1]);
-      uint32_t d2 = abs(hi-bucketTimes[2]) + abs(lo-bucketTimes[3]);
-      if (d1 < d2) signalStr += "0";
-      else signalStr += "1";
-    }
-  }
-
   if (signall > 1) {
     //Serial.println("\nDEBUG: " + signalStr);
     String code = checkCode(signalStr);
@@ -123,8 +66,6 @@ void OOKtranslate::checkSignal() {
   }
 
   signall = 0;
-  working = false;
-  if (oops) Serial.println("OOPS!");
 }
 
 void OOKtranslate::loop(uint32_t t) {
@@ -159,6 +100,71 @@ void OOKtranslate::setUnknownCallback(void (*_userUnknownCallback)(String signal
   userUnknownCallback = _userUnknownCallback;
 }
 
-void OOKtranslate::setRawCallback(void (*_userRawCallback)(String raw1, String raw2)) {
+void OOKtranslate::setRawCallback(void (*_userRawCallback)(uint8_t signalv[], uint32_t signald[], int signall)) {
   userRawCallback = _userRawCallback;
+}
+
+
+String OOKtranslate::signalToString(uint8_t sv[], uint32_t sd[], int sl) {
+  String ss;
+  for (int i = 0; i < sl; i++) {
+    ss += String(sv[i]);
+    ss += "[" + String(sd[i]) + "]";
+  }
+  return ss;
+}
+
+int OOKtranslate::removeNoise(int minLength, uint8_t sv[], uint32_t sd[], int sl) {
+  // Remove short signals, which must be noise
+  // Overwrite the arrays !!!
+  int i = 0;
+  int j = 0;
+  while (i < sl) {
+    if ((j > 0) && (sd[i] < minLength)) {
+      sd[j-1] += sd[i];
+      i++;
+    }
+    else if ((j > 0) && (sv[i] == sv[j-1])) {
+      sd[j-1] += sd[i];
+      i++;      
+    }
+    else {
+      sd[j] = sd[i];
+      sv[j] = sv[i];
+      i++; j++;
+    }
+  }
+  return j;
+}
+
+String OOKtranslate::checkBuckets(uint16_t bucketTimes[], uint8_t sv[], uint32_t sd[], int sl ) {
+
+  String signalStr = "/";
+  for (int i = 0; i < sl; i += 2) {
+    uint32_t hi = sd[i];   // It should start with '1' !
+    uint32_t lo = sd[i+1];
+    
+    // Test if the last tag is too long
+    if (lo > bucketTimes[4]) {
+      // Last signal in the row
+      if (abs(hi - bucketTimes[0]) < abs(hi-bucketTimes[2])) signalStr += "0/";
+      else signalStr += "1/";
+    }
+    // Test if the pair is too long
+    else if (  (hi + lo)*10 > (bucketTimes[0] + bucketTimes[1])*12 &&
+          (hi + lo)*10 > (bucketTimes[2] + bucketTimes[3])*12) {
+      // Missing signals if the pair length is more than 20% of known signals
+      uint16_t al = (bucketTimes[0] + bucketTimes[1] + bucketTimes[2] + bucketTimes[3]) / 2;
+      int missing = (hi + lo + al/2) / al;
+      for (int i = 0; i < missing; i++) signalStr += "*";
+    }
+    else {
+    // Select the one which is closer to any of the buckets
+      uint32_t d1 = abs(hi-bucketTimes[0]) + abs(lo-bucketTimes[1]);
+      uint32_t d2 = abs(hi-bucketTimes[2]) + abs(lo-bucketTimes[3]);
+      if (d1 < d2) signalStr += "0";
+      else signalStr += "1";
+    }
+  }
+  return signalStr;
 }
